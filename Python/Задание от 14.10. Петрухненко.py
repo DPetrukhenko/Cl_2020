@@ -26,6 +26,7 @@ print(phrase2)
 three = "not just anybody"
 phrase3 = one + two + three
 print(phrase3)
+print(one, two, three)
 
 # задание 3
 """
