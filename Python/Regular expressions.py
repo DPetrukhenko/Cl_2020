@@ -3,7 +3,7 @@ import re
 
 addresses = open(r'addresses.txt', 'r', encoding="utf-8")
 addresses = addresses.read()
-addresses_extracted = re.findall(r"\n\d+.+\n.+\d+\n.+\d+", addresses)
+addresses_extracted = re.findall(r"^\d+.+\n.+\d+\n.+\d+", addresses, flags=re.MULTILINE)
 print(addresses_extracted)
 
 # прямая речь
