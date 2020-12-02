@@ -1,6 +1,6 @@
 import re
-text = open('e-mails..txt', 'r', encoding='utf8')
-text = text.read()
+with open('e-mails..txt', 'r', encoding='utf8') as file:
+    text = file.read()
 
 # регулярное выражение для поиска полных адресов
 
