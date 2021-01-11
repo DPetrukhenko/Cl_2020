@@ -1,0 +1,4 @@
+# игнорирование системных файлов
+*.DS_Store
+# IDE
+*.ipynb_checkpoints/
