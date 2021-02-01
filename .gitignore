@@ -2,3 +2,5 @@
 *.DS_Store
 # IDE
 *.ipynb_checkpoints/
+*.pickle
+*.idea/
