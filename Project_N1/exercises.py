@@ -31,19 +31,6 @@ def get_sent_list(pos_list):
     pos_exercises = []
     for _ in range(10):
         exercise = random.choice(pos_list)
-        if 96 < len(exercise[0]) < 180:
-            exercise[0] = f'{exercise[0][:96]}\n{exercise[0][96:]}'
-        elif 180 < len(exercise[0]) < 280:
-            exercise[0] = f'{exercise[0][:100]}\n{exercise[0][100:200]}\n{exercise[0][200:]}'
-        elif 280 < len(exercise[0]) < 380:
-            exercise[0] = f'{exercise[0][:100]}\n{exercise[0][100:200]}\n{exercise[0][200:300]}\n{exercise[0][300:]}'
-        elif 380 < len(exercise[0]):
-            exercise[0] = f'{exercise[0][:100]}' \
-                          f'\n{exercise[0][100:200]}' \
-                          f'\n{exercise[0][200:300]}' \
-                          f'\n{exercise[0][300:380]}' \
-                          f'\n{exercise[0][380:]}'
-
         pos_exercises.append(exercise)
     return pos_exercises
 
@@ -55,7 +42,7 @@ def normalize_answer(raw_answer):
 
 def display_exercise():
     global my_lbl
-    my_lbl = Label(root, text=exercises[index][0])
+    my_lbl = Label(root, text=exercises[index][0], wraplength=790)
     my_lbl.config(font=('Roboto', 15))
     my_lbl.grid(row=2, column=0, columnspan=2, sticky=W+E, pady=10)
 
