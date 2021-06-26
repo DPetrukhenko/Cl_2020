@@ -5,3 +5,5 @@
 *.pickle
 *.idea/
 __MACOSX/
+__pycache__/
+config.py
