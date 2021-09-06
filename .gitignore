@@ -1,0 +1,9 @@
+# игнорирование системных файлов
+*.DS_Store
+# IDE
+*.ipynb_checkpoints/
+*.pickle
+*.idea/
+__MACOSX/
+__pycache__/
+config.py

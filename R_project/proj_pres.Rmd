@@ -1,0 +1,480 @@
+---
+title: "Анализ результатов школьного тестирования"
+author: 'Дарья Петрухненко'
+output: 
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r loading data, echo = FALSE}
+library(tidyverse)
+library(psych)
+library(ggthemes)
+library(plotly)
+library(ggpubr)
+library(car)
+library(showtext)
+library(ggtext)
+sem <- function(x) sd(x)/sqrt(length(x))
+```
+
+### 1. Датасет
+
+В таблице представлены оценки по тестированию в американских школах, включая дополнительнительную информацию, такую как пол, этническая пренадлежность, оплата обеда и т.д.
+```{r dataset}
+performance <- read_csv('StudentsPerformance.csv')
+head(performance)
+```
+
+Из структуры мы видим, что в таблице представлены три количественные переменные, 4 номинативные и одна ранговая. В распределении количестенных переменных присутствует небольшая отрицательная ассиметрия в связи с верхней границей (100 баллов).
+```{r structure}
+str(performance)
+describe(performance)
+```
+### 2. План исследования
+1. Можно предположить, что в среднем баллы по разным предметам будут различаться, т.к. предметы имет разную сложность (например, математика многим дается сложнее других предметов). В связи с этим можно выдвинуть несколько гипотез:
+
+   - Различие средних значений по выборкам (баллы за тест) будут статистически различаться для разных предметов. Проверку можно произвести однофакторным ANOVA с post-hoc t-тестом.
+   - Подготовительные курсы также будут давать статистическое различие и будут иметь различное влияние в зависимости от предмета - метод: двухфакторный ANOVA.
+   
+2. Уровень образования родителей будет влиять на баллы. Метод: двухфакторный ANOVA.
+
+3. Уровень образования родителей коррелирует с посещением подготовительного курса. Метод:    Хи-квадрат.
+
+4. Уровень образования родителей коррелирует со стоимостью обеда (косвенно покажет корреляцию образования/дохода). Метод: Хи-квадрат.
+
+5. Баллы по предметам линейно зависимы, можно построить регрессионную модель. Метод:
+   коэффициент корреляции Пирсона и линейная регрессия.
+
+```{r set up, echo = FALSE}
+gathered_scores <- performance %>% 
+  select(`math score`:`writing score`) %>% 
+  gather() %>% 
+  rename(subject = key,
+         score = value) %>% 
+  mutate(subject = as.factor(subject))
+
+base_theme <- theme(plot.title = element_text(hjust = .5),
+                    axis.title.x = element_text(vjust = 0.1),
+                    strip.text = element_text(face = 'bold.italic')
+                    )
+base_plot <- gathered_scores %>% 
+  ggplot(aes(score)) +
+  labs(x = 'Score', y = 'Count', 
+       title = 'Score distribution by subject') +
+  theme_pubclean(base_family = 'Times New Roman') +
+
+  theme(strip.background = element_blank(),
+        strip.text = element_text(face = 'bold.italic', size = 11),
+        plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_text(vjust = 0.1),
+        axis.text = element_text(face = 'bold.italic')
+        )
+```
+### 3. Тестирование гипотез
+
+#### Допущения дисперсионного анализа:
+ - Нормальность распределения признака по группам  
+ - Гомогенность дисперсии
+ 
+ 
+#### 1.1. Сравнение баллов по предметам
+
+
+```{r hist + qq plot, echo = FALSE} 
+base_plot +
+  geom_histogram(alpha=0.6, bins=20,
+                      color = 'dodgerblue4', fill = 'dodgerblue3') +
+  facet_wrap(~subject, scales = 'free_x')
+
+gathered_scores %>%
+  ggplot(aes(sample = score)) +
+  theme_pubclean(base_family = 'Times New Roman') +
+  geom_qq(alpha = 0.4, color = 'firebrick4') +
+  geom_qq_line() +
+  labs(x = 'Theoretical quantiles', y = 'Data quantiles',
+         title = 'QQ-Plot for score distribution') +
+  facet_wrap(~subject, scales = 'free_x')+
+  theme(strip.background = element_blank()) +
+  base_theme
+```
+
+Признак распределен с небольшим отклонением от нормального.
+```{r leveneTest}
+leveneTest(score ~ subject, data = gathered_scores)
+```
+Тест на гомогенность дал p-value > 0.05  - можно принять нулевую гипотезу о гомогенности дисперсий.
+```{r ANOVA test}
+aov_by_subject <- aov(score ~ subject, data = gathered_scores)
+summary(aov_by_subject)
+```
+Дисперсионный анализ показал, что как минимум две группы имеют статистически значимое различие.
+```{r paired comparisons}
+pairwise.t.test(gathered_scores$score, gathered_scores$subject)
+TukeyHSD(aov_by_subject)
+```
+post-hoc сравнения показали, что баллы по математике значимо отличаются от баллов по чтению и письму.
+
+
+```{r boxplor and pointrange, echo=FALSE}
+gathered_scores %>% 
+  ggplot(aes(x = subject, y = score, color = subject)) +
+  scale_color_brewer(palette = "Accent", guide = 'none') +
+  geom_boxplot() +
+  labs(title = 'Score distribution by subject', x = 'Subject',
+       y = 'Score') +
+  theme_bw(base_family = 'Times New Roman') +
+  base_theme +
+  theme(axis.text.x = element_text(face = 'bold.italic'))
+  
+
+gathered_scores %>% 
+  group_by(subject) %>%
+  summarise(meanscore = mean(score),
+            se = sem(score)) %>%
+  ggplot(aes(x = subject, y = meanscore, color = subject)) +
+  scale_color_brewer(palette = "Dark2", guide = 'none') +
+  geom_pointrange(aes(ymin = meanscore - (1.9 * se), 
+                      ymax = meanscore + (1.9 * se))) +
+  labs(title = 'Score distribution by subject', x = 'Subject',
+       y = 'Score') +
+  theme_bw(base_family = 'Times New Roman') +
+  base_theme +
+  theme(axis.text.x = element_text(face = 'bold.italic'))
+```
+
+
+```{r mean difference}
+median(performance$`math score`) - median(performance$`writing score`)
+median(performance$`math score`) - median(performance$`reading score`)
+```
+
+
+#### 1.2. Сравнение баллов по предметам и посещению подготовительного курса
+
+
+```{r by subject and course, echo=FALSE}
+prep_subject <- performance %>% 
+  select(`test preparation course`:last_col()) %>% 
+  pivot_longer(cols = `math score`: last_col(),
+               values_to = 'score',
+               names_to = 'subject') %>% 
+  mutate(across(where(is.character), as.factor))
+
+aov_by_preparation <- aov(score ~ as.factor(subject) * as.factor(`test preparation course`), data = prep_subject)
+
+ggplot(prep_subject, aes(x = score)) +
+  geom_histogram(alpha=0.6, bins=15, 
+                 color = 'dodgerblue4', fill = 'steelblue3') +
+  facet_wrap(~ subject + `test preparation course` ) +
+  labs(x = 'Score', y = 'Count', 
+       title = 'Score distribution by subject and preparation') +
+  theme_minimal(base_family = 'Times New Roman') +
+  base_theme
+
+ggplot(aes(x = residuals(aov_by_preparation)), data = prep_subject) +
+  geom_histogram(alpha=0.6, bins=30, 
+                 color = 'dodgerblue4', fill = 'steelblue3') +
+  labs(x = 'Residuals', y = 'Count', 
+       title = 'Residuals distribution') +
+  theme_minimal(base_family = 'Times New Roman') +
+  base_theme
+  
+```
+  
+Распределения признака и остатков близки к нормальному.
+
+
+```{r jitter plots, echo=FALSE}
+prep_subject$residuals <- residuals(aov_by_preparation)
+
+prep_subject %>% 
+  ggplot(aes(x = subject, y = score, color = `test preparation course`)) +
+  geom_jitter(width = .2, alpha = .5) +
+  facet_wrap(~ `test preparation course`) +
+  scale_color_brewer(palette = "Dark2",
+                     name = "Preparation course:", 
+                     labels = c("Yes", "No")) +
+  labs(title = 'Score distribution by subject and preparation', x = 'Subject',
+       y = 'Score') +
+  theme_minimal(base_family = 'Times New Roman') +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(face = 'bold.italic'),
+        axis.title.x = element_text(vjust = 0),
+        strip.text = element_blank()
+  )
+
+
+prep_subject %>% 
+  ggplot(aes(x = subject, y = residuals, 
+                         color = `test preparation course`)) + 
+  geom_jitter(width = .2, alpha = .5) +
+  facet_wrap(~ `test preparation course`) +
+  scale_color_brewer(palette = "Dark2",
+                     name = "Preparation course:", 
+                     labels = c("Yes", "No")) +
+  labs(title = 'Residuals distribution', x = 'Subject',
+       y = 'Residuals') +
+  theme_minimal(base_family = 'Times New Roman') +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(face = 'bold.italic'),
+        axis.title.x = element_text(vjust = 0),
+        strip.text = element_blank()
+  )
+```
+  
+Дисперсия признака и остатков значимо не отличается. Дополнительная проверка статистическими инструментами:
+
+```{r variation test}
+leveneTest(score ~ subject * `test preparation course`,
+           data = prep_subject)
+```
+```{r aov by preparation}
+aov_by_preparation <- aov(score ~ as.factor(subject) * as.factor(`test preparation course`), data = prep_subject)
+summary(aov_by_preparation)
+```
+Результаты дисперсионного анализа говорят о том, что оба фактора и их взаимодействие значимо влияет на изменчивость признака.
+
+```{r paired comparison - Tukey}
+TukeyHSD(aov_by_preparation)
+```
+
+```{r pointrange plot, echo = FALSE}
+
+
+prep_subject %>%
+  group_by(`test preparation course`, subject) %>%
+  summarise(meanscore = mean(score),
+            se = sem(score)) %>%
+  ggplot(aes(x = subject, 
+             y = meanscore, 
+             colour = `test preparation course`)) +
+  geom_line(aes(group = `test preparation course`)) +
+  geom_pointrange(aes(ymin = meanscore - (1.9 * se), 
+                      ymax = meanscore + (1.9 * se))) +
+  labs(x = 'Subject', y = 'Score',
+       title = 'Score distribution by subject and preparation') +
+  scale_color_brewer(palette = "Accent",
+                     name = "Preparation course:", 
+                     labels = c("Yes", "No")) +
+  theme_minimal(base_family = 'Times New Roman') +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(face = 'bold.italic'),
+        axis.title.x = element_text(vjust = 0)
+        )
+```
+
+#### 2. Взаимосвязь образования родителей с баллами по предметам
+
+```{r set up for education, echo = FALSE}
+parent_subj <- performance %>% 
+  select(c(`parental level of education`, `math score`:`writing score`) )%>% 
+  pivot_longer(cols = `math score`:`writing score`,
+               values_to = 'score',
+               names_to = 'subject') %>% 
+  mutate(across(where(is.character), as.factor)) 
+
+aov_parents <- aov(score ~ as.factor(`parental level of education`) * as.factor(subject), 
+    data = parent_subj)
+
+ggplot(aes(x = residuals(aov_parents)), data = aov_parents) +
+  geom_histogram(alpha=0.6, bins=30, 
+                 color = 'dodgerblue4', fill = 'dodgerblue3') +
+  labs(x = 'Residuals', y = 'Count', 
+       title = 'Residuals distribution') +
+  theme_minimal(base_family = 'Times New Roman') +
+  base_theme
+```
+  
+Распределение остатков близко к нормальному.
+```{r variation test for education}
+leveneTest(score ~ subject * `parental level of education`, data = parent_subj)
+```
+Можно принять нулевую гипотезу о гомогенности дисперсий.
+```{r aov summary}
+summary(aov_parents)
+```
+Фактор образования является значимым, а взаимодействие с предметом - незначимо.
+
+```{r, echo = FALSE}
+parent_subj %>%
+  group_by(`parental level of education`, subject) %>%
+  summarise(meanscore = mean(score),
+            se = sem(score)) %>%
+  ggplot(aes(x = subject, 
+             y = meanscore, 
+             colour = `parental level of education`)) +
+  geom_line(aes(group = `parental level of education`)) +
+  geom_pointrange(aes(ymin = meanscore -  se, 
+                      ymax = meanscore + se)) +
+  labs(x = 'Subject', y = 'Score',
+       title = 'Score distribution by subject and parents education') +
+  scale_color_brewer(palette = "Accent",
+                     name = "Parents education:"
+                     ) +
+  theme_minimal(base_family = 'Times New Roman') +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(face = 'bold.italic'),
+        axis.title.x = element_text(vjust = 0)
+  )
+```
+
+#### 3. Взаимосвязь образования родителей и посещения подготовительного курса
+
+Так как оба фактора оказались значимыми, можно проверить нет ли между ними корреляции.
+
+```{r education - prep matrix, echo = FALSE}
+education_prep_matrix <- performance %>% 
+  count(`parental level of education`, `test preparation course`) %>% 
+  pivot_wider(names_from = 'test preparation course', values_from = 'n') %>% 
+  select(-`parental level of education`) %>% 
+  as.matrix()
+rownames(education_prep_matrix) <- c("associate's degree", "bachelor's degree", 
+                                     "high school", "master's degree", "some college",
+                                     "some high school")
+```
+
+```{r chi_sq test}
+education_prep_matrix
+chisq.test(education_prep_matrix)
+```
+P-value > 0.05, значит, мы не можем отвергнуть нулевую гипотезу о том, что взаимосвязи между двумя переменными нет.
+
+```{r bar plot for preparation, echo=FALSE}
+performance %>% 
+  ggplot(aes(x = `parental level of education`, fill = `test preparation course`))+ 
+  geom_bar(position="dodge", alpha = 0.8) +
+  scale_fill_brewer(palette = 'Paired', name = 'preparation') +
+  theme_pubclean(base_family = 'Times New Roman') +
+  labs(x = 'Parental level of education', y = 'Count',
+       title = 'Level of education vs test preparation course') +
+  theme(legend.position = 'bottom',
+        axis.text.x = element_text(face = 'bold.italic',
+                                   size = 8)) +
+  base_theme
+```
+
+#### 4. Взаимосвязь образования и дохода родителей
+
+Мы можем также проверить взаимосвязь уровня образования родителей и то, как они платят за обед, что может косвенно показать взаимосвязь между образованием и уровнем дохода.
+```{r, echo = FALSE}
+education_lunch_matrix <- performance %>% 
+  count(`parental level of education`, `lunch`) %>% 
+  pivot_wider(names_from = 'lunch', values_from = 'n') %>% 
+  select(-`parental level of education`) %>% 
+  as.matrix()
+  
+
+
+rownames(education_lunch_matrix) <- c("associate's degree", "bachelor's degree", 
+                                "high school", "master's degree", "some college",
+                                "some high school")
+```
+
+```{r}
+education_lunch_matrix
+chisq.test(education_lunch_matrix)
+```
+Значение p-value близко к единице, скорее всего, между нашими переменными нет никакой корреляции.
+```{r, echo = FALSE}
+performance %>% 
+  ggplot(aes(x = `parental level of education`, fill = lunch))+ 
+  geom_bar(position="dodge", alpha = 0.8) +
+  scale_fill_brewer(palette = 'Paired', name = 'lunch payment type') +
+  theme_pubclean(base_family = 'Times New Roman') +
+  labs(x = 'Parental level of education', y = 'Count',
+       title = 'Level of education vs lunch payment type count') +
+  theme(legend.position = 'bottom',
+        axis.text.x = element_text(face = 'bold.italic',
+                                   size = 8)) +
+  base_theme
+```
+
+#### 5. Линейная зависимость баллов по разным предметам
+
+```{r, echo = FALSE}
+score_corr <- performance %>% 
+  select(`math score`:last_col()) %>% 
+  corrr::correlate(diagonal = 1, quiet = TRUE) 
+
+score_corr <- score_corr %>%
+  pivot_longer(
+    cols = -term,
+    names_to = "colname",
+    values_to = "corr"
+  ) %>%
+  mutate(rowname = fct_inorder(term),
+         colname = fct_inorder(colname))
+
+ggplot(score_corr, aes(rowname, fct_rev(colname),fill = corr)) +
+  geom_tile() +
+  geom_text(aes(label = format(round(corr, 2))), color = 'white') +
+  coord_fixed(expand = FALSE) +
+  scale_fill_distiller(
+    palette = "PuOr", na.value = "white",
+    direction = 1, limits = c(-1, 1),  name = 'Corr'
+  ) +
+  labs(x = NULL, y = NULL, title = 'Correlation table')  +
+  theme_minimal(base_family = 'Times New Roman') +
+  theme(plot.title = element_text(hjust = .5),
+        axis.text = element_text(face = 'bold.italic')) 
+
+```
+  
+Как и ожидалось, баллы сильно коррелируют. Можно построить регрессионную модель с одним предиктором.
+```{r}
+reading_writing_m <- lm(`reading score` ~ `writing score`, data = performance)
+summary(reading_writing_m)
+```
+```{r, echo = FALSE}
+performance$residuals = reading_writing_m$residuals
+
+performance$fitted = reading_writing_m$fitted.values
+
+performance %>% 
+  ggplot(aes(x = `writing score`, y = `reading score`)) +
+  geom_point(alpha = .6, color = 'deepskyblue3') +
+  theme_minimal(base_family = 'Times New Roman') +
+  geom_smooth(method = 'lm', se = TRUE, color = 'firebrick3', 
+              fill = 'firebrick3') +
+  labs(x = 'Writing score', y = 'Reading score',
+       title = 'Reading score vs Writing score') +
+  base_theme
+
+
+performance %>% 
+  ggplot(aes(sample = residuals)) +
+  theme_pubclean(base_family = 'Times New Roman') +
+  geom_qq(alpha = 0.4, color = 'firebrick4') +
+  geom_qq_line() +
+  labs(x = 'Theoretical quantiles', y = 'Data quantiles', 
+       title = 'QQ-Plot for residuals') +
+  base_theme
+```
+
+
+#### Вывод
+
+```{r, echo=FALSE}
+mean_scores <- performance %>% 
+  select(c(`parental level of education`, lunch, `test preparation course`, 
+           `math score`:`writing score`)) %>% 
+  pivot_longer(cols = `math score`:`writing score`,
+               names_to = 'subject',
+               values_to = 'score') %>% 
+  group_by(`parental level of education`, lunch, `test preparation course`) %>% 
+  summarise(`mean score` = mean(score),
+            `median score` = median(score),
+            sd = sd(score)) %>% 
+  dplyr::arrange(-`mean score`)
+
+mean_scores
+```
